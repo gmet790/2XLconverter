@@ -1,0 +1,618 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Tables to Excel</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one working column — drop zone + options bar, then a stack of table previews, sticky export bar at the bottom */
+:root{
+  --bg:#f3f5f4; --surface:#ffffff; --fg:#17201d; --muted:#5d6b66; --line:#d5ddd9; --grid:#e4eae7;
+  --accent:#1f7a5a; --accent-fg:#ffffff; --accent-soft:#e2f1ea; --warn:#9a5b00; --head:#eef3f1;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111715; --surface:#18201d; --fg:#e4ece8; --muted:#93a39c; --line:#2c3833; --grid:#25302b;
+  --accent:#4fc196; --accent-fg:#0b1612; --accent-soft:#183a2d; --warn:#e2a64a; --head:#1e2925; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111715; --surface:#18201d; --fg:#e4ece8; --muted:#93a39c; --line:#2c3833; --grid:#25302b;
+  --accent:#4fc196; --accent-fg:#0b1612; --accent-soft:#183a2d; --warn:#e2a64a; --head:#1e2925; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:15px;line-height:1.5}
+.wrap{max-width:1040px;margin:0 auto;padding-block:28px 120px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:20px}
+header h1{font-size:1.6rem;font-weight:600;margin:0;letter-spacing:-.01em;text-wrap:balance}
+header p{margin:4px 0 0;color:var(--muted);max-width:62ch}
+.drop{border:1.5px dashed var(--line);border-radius:10px;background:var(--surface);padding:28px 20px;display:flex;align-items:center;gap:18px;flex-wrap:wrap;cursor:pointer;transition:border-color .15s,background .15s}
+.drop:hover,.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.drop .ico{width:44px;height:52px;flex:none;position:relative}
+.drop strong{display:block;font-weight:600}
+.drop span{color:var(--muted);font-size:.9rem}
+.drop input{position:absolute;opacity:0;width:1px;height:1px}
+.opts{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:end}
+.opt{display:flex;flex-direction:column;gap:4px;min-width:0}
+.opt label,.lbl{font-size:.72rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:500}
+select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:7px 10px;max-width:100%}
+.check{display:flex;align-items:center;gap:8px;font-size:.92rem;padding-bottom:7px}
+input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px}
+.status{font-size:.9rem;color:var(--muted)}
+.note{margin:0;font-size:.88rem;color:var(--muted);background:var(--surface);border-left:3px solid var(--accent);padding:8px 12px;max-width:72ch}
+.status.err{color:var(--warn)}
+.list{display:flex;flex-direction:column;gap:16px}
+.tbl{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;min-width:0}
+.tbl.off{opacity:.5}
+.tbl-head{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.tbl-head .name{font-weight:600}
+.tbl-head .meta{font-family:var(--mono);font-size:.78rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.tbl-head .src{font-size:.82rem;color:var(--muted);margin-left:auto;overflow-wrap:anywhere}
+.tag{font-size:.7rem;text-transform:uppercase;letter-spacing:.07em;background:var(--accent-soft);color:var(--accent);padding:2px 8px;border-radius:99px;font-weight:600}
+.scroll{overflow-x:auto;max-height:420px;overflow-y:auto}
+table{border-collapse:collapse;font-size:.86rem;font-variant-numeric:tabular-nums}
+th.rn,td{border:1px solid var(--grid);padding:5px 9px;vertical-align:top;white-space:pre-wrap;max-width:320px}
+th.rn{background:var(--head);color:var(--muted);font-family:var(--mono);font-weight:400;font-size:.72rem;text-align:right;position:sticky;left:0}
+tr.colh th{background:var(--head);color:var(--muted);font-family:var(--mono);font-weight:400;font-size:.72rem;border:1px solid var(--grid);padding:3px 9px;position:sticky;top:0}
+td.num{text-align:right;font-family:var(--mono)}
+.more{padding:8px 14px;font-size:.82rem;color:var(--muted);border-top:1px solid var(--line)}
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);padding-top:12px;padding-bottom:calc(12px + env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.bar-in{max-width:1040px;margin:0 auto;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.bar .sum{flex:1;min-width:0;font-size:.92rem}
+.bar .sum b{font-variant-numeric:tabular-nums}
+button{font:inherit;font-weight:600;border:0;border-radius:7px;padding:10px 18px;background:var(--accent);color:var(--accent-fg);cursor:pointer}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.ghost{background:transparent;color:var(--muted);border:1px solid var(--line);font-weight:500}
+button:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Tables to Excel</h1>
+    <p>Pull the tables out of Word and PDF files, or join several Excel files into one workbook, on separate sheets or one combined sheet. Text, headings and images outside tables are left behind. Everything runs in your browser; your files are never uploaded.</p>
+  </header>
+
+  <label class="drop" id="drop">
+    <svg class="ico" viewBox="0 0 44 52" aria-hidden="true"><path d="M2 2h28l12 12v36H2z" fill="none" stroke="currentColor" stroke-width="2" opacity=".55"/><path d="M30 2v12h12" fill="none" stroke="currentColor" stroke-width="2" opacity=".55"/><g stroke="var(--accent)" stroke-width="2"><rect x="9" y="22" width="26" height="20" fill="none"/><path d="M9 29h26M9 35h26M20 22v20"/></g></svg>
+    <div><strong>Choose Word, PDF or Excel files, or drop them here</strong><span>.docx, .pdf, .xlsx, .xls, .csv and .ods. Mix as many as you like. Older .doc files need saving as .docx first, and scanned PDFs have no readable text.</span></div>
+    <input type="file" id="file" accept=".docx,.pdf,.xlsx,.xlsm,.xls,.csv,.ods,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" multiple>
+  </label>
+
+  <div class="opts">
+    <div class="opt">
+      <label for="layout">Layout</label>
+      <select id="layout">
+        <option value="sheets">Different sheets</option>
+        <option value="stack">Same sheet</option>
+      </select>
+    </div>
+    <div class="opt" id="stackOpt" hidden>
+      <label for="stackmode">On the same sheet</label>
+      <select id="stackmode">
+        <option value="join">Join rows under one header</option>
+        <option value="label">Place one after another, labelled</option>
+      </select>
+    </div>
+    <label class="check" id="srcOpt" hidden><input type="checkbox" id="srcCol" checked> Add a Source column</label>
+    <div class="opt">
+      <label for="numfmt">Numbers in cells</label>
+      <select id="numfmt">
+        <option value="text">Keep as text</option>
+        <option value="dot">Convert, 1,234.56 style</option>
+        <option value="comma">Convert, 1.234,56 style</option>
+      </select>
+    </div>
+    <div class="opt">
+      <label for="pdfmode">PDF tables</label>
+      <select id="pdfmode">
+        <option value="detect">Detect tables</option>
+        <option value="page">Each page as one table</option>
+      </select>
+    </div>
+    <label class="check"><input type="checkbox" id="joinPages" checked> Join PDF tables split across pages</label>
+    <label class="check"><input type="checkbox" id="merge" checked> Keep merged cells</label>
+    <label class="check"><input type="checkbox" id="skipEmpty" checked> Drop empty rows</label>
+  </div>
+  <p class="note" id="pdfnote" hidden>PDF tables are rebuilt from where the text sits on the page, so check the preview. If a table is missed or split oddly, switch PDF tables to “Each page as one table”.</p>
+
+  <div class="status" id="status" role="status"></div>
+  <div class="list" id="list"></div>
+</div>
+
+<div class="bar"><div class="bar-in">
+  <div class="sum" id="sum"></div>
+  <button class="ghost" id="clear" type="button" hidden>Clear</button>
+  <button id="save" type="button" disabled>Download .xlsx</button>
+</div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
+<script>
+const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+const $ = id => document.getElementById(id);
+let tables = [];      // {file, index, page?, values, merges:[{r,c,rs,cs}], nRows, nCols, on, example}
+let fileNames = [];
+let sourceFiles = [];
+let isExample = true;
+
+/* ---------- DOCX parsing ---------- */
+function closest(el, local){ for(let p=el.parentNode; p; p=p.parentNode){ if(p.namespaceURI===W && p.localName===local) return p; } return null; }
+function kids(el, local, owner){ return [...el.getElementsByTagNameNS(W, local)].filter(k => closest(k, owner) === el); }
+function child(el, local){ for(const c of el.children) if(c.namespaceURI===W && c.localName===local) return c; return null; }
+function val(el){ return el ? (el.getAttributeNS(W,"val") ?? el.getAttribute("w:val")) : null; }
+
+function paraText(p){
+  let s = "";
+  const walk = n => {
+    for(const c of n.childNodes){
+      if(c.nodeType!==1) continue;
+      if(c.namespaceURI===W){
+        const l = c.localName;
+        if(l==="t") { s += c.textContent; continue; }
+        if(l==="tab") { s += "\t"; continue; }
+        if(l==="br" || l==="cr") { s += "\n"; continue; }
+        if(l==="tbl" || l==="delText" || l==="instrText" || l==="del") continue;
+      }
+      walk(c);
+    }
+  };
+  walk(p);
+  return s;
+}
+
+function parseTable(tbl){
+  const rows = kids(tbl, "tr", "tbl");
+  const grid = [];         // grid[r][c] = {text, origin:true} | {cover:[r0,c0]} | undefined
+  const origins = [];      // {r,c,rs,cs,text}
+  rows.forEach((tr, r) => {
+    grid[r] = grid[r] || [];
+    let col = 0;
+    const trPr = child(tr, "trPr");
+    const gb = trPr && child(trPr, "gridBefore");
+    if(gb) col += parseInt(val(gb)) || 0;
+    kids(tr, "tc", "tr").forEach(tc => {
+      const pr = child(tc, "tcPr");
+      const span = pr && child(pr, "gridSpan") ? (parseInt(val(child(pr,"gridSpan"))) || 1) : 1;
+      const vm = pr && child(pr, "vMerge");
+      const vmVal = vm ? (val(vm) || "continue") : null;
+      const text = kids(tc, "p", "tc").map(paraText).join("\n").replace(/\s+$/,"");
+      if(vmVal === "continue"){
+        // extend the origin above this column
+        let above = null;
+        for(let rr=r-1; rr>=0; rr--){ const g = grid[rr] && grid[rr][col]; if(g){ above = g.origin ? g.ref : g.cover; break; } }
+        if(above){
+          above.rs = Math.max(above.rs, r - above.r + 1);
+          for(let k=0;k<span;k++) grid[r][col+k] = {cover: above};
+          col += span; return;
+        }
+      }
+      const o = {r, c:col, rs:1, cs:span, text};
+      origins.push(o);
+      grid[r][col] = {origin:true, ref:o};
+      for(let k=1;k<span;k++) grid[r][col+k] = {cover:o};
+      col += span;
+    });
+  });
+  const nRows = rows.length;
+  const nCols = Math.max(0, ...grid.map(r => r.length));
+  const values = Array.from({length:nRows}, () => Array(nCols).fill(""));
+  origins.forEach(o => { values[o.r][o.c] = o.text; });
+  const merges = origins.filter(o => o.rs>1 || o.cs>1).map(o => ({r:o.r, c:o.c, rs:o.rs, cs:o.cs}));
+  return {values, merges, nRows, nCols};
+}
+
+async function readDocx(file){
+  const zip = await JSZip.loadAsync(file);
+  const entry = zip.file("word/document.xml");
+  if(!entry) throw new Error("not a Word document");
+  const xml = new DOMParser().parseFromString(await entry.async("string"), "application/xml");
+  if(xml.getElementsByTagName("parsererror").length) throw new Error("the document text could not be read");
+  return [...xml.getElementsByTagNameNS(W, "tbl")].map(parseTable).filter(t => t.nRows && t.nCols);
+}
+
+/* ---------- PDF parsing (text-position based) ---------- */
+function splitWide(it){
+  // some PDFs pack a whole row into one text run, separated by runs of spaces
+  if(!/\S\s{3,}\S/.test(it.s)) return [it];
+  const out = [], len = it.s.length || 1, re = /\S+(?:\s{1,2}\S+)*/g; let m;
+  while((m = re.exec(it.s))) out.push({...it, s:m[0], x: it.x + it.w * (m.index/len), w: it.w * (m[0].length/len)});
+  return out;
+}
+function lineCells(line){
+  const its = line.items.flatMap(splitWide).sort((a,b) => a.x - b.x);
+  const cells = []; let cur = null;
+  for(const it of its){
+    const em = it.h || 10;
+    const gap = cur ? it.x - cur.x1 : Infinity;
+    if(cur && gap < em * 0.75){
+      cur.t += (gap > em * 0.1 && !/\s$/.test(cur.t) && !/^\s/.test(it.s) ? " " : "") + it.s;
+      cur.x1 = Math.max(cur.x1, it.x + it.w);
+    } else { cur = {x0:it.x, x1:it.x + it.w, t:it.s}; cells.push(cur); }
+  }
+  cells.forEach(c => c.t = c.t.replace(/\s+/g," ").trim());
+  return cells.filter(c => c.t);
+}
+function pdfLines(items){
+  const its = items
+    .filter(i => i.str && i.str.trim() && Math.abs(i.transform[1]) < 0.01 && Math.abs(i.transform[2]) < 0.01)
+    .map(i => ({x:i.transform[4], y:i.transform[5], w:i.width, h:Math.abs(i.transform[3]) || i.height || 10, s:i.str}))
+    .sort((a,b) => b.y - a.y || a.x - b.x);
+  const lines = [];
+  for(const it of its){
+    let L = null;
+    for(let k = lines.length - 1; k >= Math.max(0, lines.length - 3); k--){
+      if(Math.abs(lines[k].y - it.y) <= Math.max(2, Math.min(lines[k].h, it.h) * 0.5)){ L = lines[k]; break; }
+    }
+    if(L){ L.items.push(it); L.h = Math.max(L.h, it.h); } else lines.push({y:it.y, h:it.h, items:[it]});
+  }
+  lines.forEach(l => l.cells = lineCells(l));
+  return lines.filter(l => l.cells.length);
+}
+function findBlocks(lines){
+  const blocks = []; let cur = [], singles = 0;
+  const close = () => {
+    while(cur.length && cur[cur.length-1].cells.length < 2) cur.pop();
+    if(cur.filter(l => l.cells.length >= 2).length >= 2) blocks.push(cur);
+    cur = []; singles = 0;
+  };
+  for(const l of lines){
+    const prev = cur[cur.length-1];
+    if(prev && prev.y - l.y > Math.max(prev.h, l.h) * 3) close();
+    if(l.cells.length >= 2){ cur.push(l); singles = 0; }
+    else if(cur.length){ if(++singles > 2) close(); else cur.push(l); }
+  }
+  close();
+  return blocks;
+}
+function mergeIntervals(ivs){
+  const out = [];
+  ivs.slice().sort((a,b) => a[0]-b[0]).forEach(([a,b]) => {
+    const last = out[out.length-1];
+    if(last && a <= last[1]) last[1] = Math.max(last[1], b); else out.push([a,b]);
+  });
+  return out;
+}
+function blockToTable(lines){
+  const multi = lines.filter(l => l.cells.length >= 2);
+  const maxC = multi.length ? Math.max(...multi.map(l => l.cells.length)) : 1;
+  const ref = (multi.length ? multi : lines).filter(l => l.cells.length === maxC);
+  const refIv = ref.flatMap(l => l.cells.map(c => [c.x0, c.x1]));
+  let bands = mergeIntervals(refIv);
+  const overlaps = (b, c) => Math.min(b[1], c.x1) - Math.max(b[0], c.x0) > 0;
+  const extra = lines.flatMap(l => l.cells).filter(c => !bands.some(b => overlaps(b, c))).map(c => [c.x0, c.x1]);
+  if(extra.length) bands = mergeIntervals(refIv.concat(extra));
+  const nb = bands.length;
+  const values = [], merges = [];
+  lines.forEach((l, r) => {
+    const row = Array(nb).fill(""), spans = [];
+    l.cells.forEach(c => {
+      let hit = bands.map((b,i) => overlaps(b,c) ? i : -1).filter(i => i >= 0);
+      if(!hit.length){
+        const mid = (c.x0 + c.x1) / 2; let best = 0, d = Infinity;
+        bands.forEach((b,i) => { const dd = Math.abs((b[0]+b[1])/2 - mid); if(dd < d){ d = dd; best = i; } });
+        hit = [best];
+      }
+      const i0 = hit[0];
+      row[i0] = row[i0] ? row[i0] + " " + c.t : c.t;
+      if(hit.length > 1) spans.push({c:i0, cs:hit[hit.length-1] - i0 + 1});
+    });
+    spans.forEach(s => { let ok = true; for(let k = s.c+1; k < s.c+s.cs; k++) if(row[k]) ok = false; if(ok) merges.push({r, c:s.c, rs:1, cs:s.cs}); });
+    values.push(row);
+  });
+  return {values, merges, nRows:values.length, nCols:nb};
+}
+const sameRow = (a, b) => a.length === b.length && a.every((v,i) => String(v ?? "").trim() === String(b[i] ?? "").trim());
+
+/* ---------- Excel / CSV / ODS ---------- */
+async function readSheets(file){
+  const wb = XLSX.read(await file.arrayBuffer(), {type:"array", cellDates:true, codepage:65001});
+  const out = [];
+  wb.SheetNames.forEach(name => {
+    const ws = wb.Sheets[name];
+    if(!ws || !ws["!ref"]) return;
+    const rng = XLSX.utils.decode_range(ws["!ref"]);
+    const values = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:"", blankrows:true});
+    if(!values.length) return;
+    const nCols = Math.max(...values.map(r => r.length));
+    values.forEach(r => { while(r.length < nCols) r.push(""); });
+    const merges = (ws["!merges"] || []).map(m => ({r:m.s.r - rng.s.r, c:m.s.c - rng.s.c, rs:m.e.r - m.s.r + 1, cs:m.e.c - m.s.c + 1}))
+      .filter(m => m.r >= 0 && m.c >= 0 && m.r < values.length);
+    if(values.every(r => r.every(v => String(v).trim() === ""))) return;
+    out.push({values, merges, nRows:values.length, nCols, sheet: /\.csv$/i.test(file.name) ? null : name});
+  });
+  return out;
+}
+async function readPdf(file){
+  if(typeof pdfjsLib === "undefined") throw new Error("the PDF reader did not load; check your connection and reload");
+  let doc;
+  try { doc = await pdfjsLib.getDocument({data: await file.arrayBuffer(), isEvalSupported:false}).promise; }
+  catch(e){ throw new Error(e && e.name === "PasswordException" ? "it is password-protected" : "it is not a readable PDF"); }
+  const mode = $("pdfmode").value, join = $("joinPages").checked;
+  const out = []; let anyText = false, lastWasPageEnd = false;
+  for(let p = 1; p <= doc.numPages; p++){
+    const page = await doc.getPage(p);
+    const lines = pdfLines((await page.getTextContent()).items);
+    if(lines.length) anyText = true;
+    const blocks = mode === "page" ? (lines.length ? [lines] : []) : findBlocks(lines);
+    blocks.forEach((b, k) => {
+      const t = blockToTable(b); t.page = p;
+      const prev = out[out.length-1];
+      if(join && k === 0 && prev && lastWasPageEnd && prev.nCols === t.nCols && p === prev.lastPage + 1){
+        let rows = t.values, off = prev.values.length;
+        let drop = sameRow(rows[0], prev.values[0]) ? 1 : 0;   // repeated header row
+        prev.values.push(...rows.slice(drop));
+        t.merges.filter(m => m.r >= drop).forEach(m => prev.merges.push({...m, r: m.r - drop + off}));
+        prev.nRows = prev.values.length; prev.lastPage = p;
+      } else { t.lastPage = p; out.push(t); }
+    });
+    lastWasPageEnd = blocks.length > 0 && (mode === "page" || isLastOnPage(blocks[blocks.length-1], lines));
+    page.cleanup();
+  }
+  await doc.destroy();
+  if(!anyText) throw new Error("it has no selectable text (it may be a scan)");
+  return out.filter(t => t.nRows && t.nCols);
+}
+function isLastOnPage(block, lines){
+  // the table runs to the bottom of the text on that page (allowing a footer line or two)
+  const bottom = block[block.length-1];
+  return lines.indexOf(bottom) >= lines.length - 3;
+}
+
+/* ---------- value handling ---------- */
+function toValue(s){
+  if(typeof s !== "string") return s;   // numbers and dates from spreadsheets stay as they are
+  const mode = $("numfmt").value;
+  if(mode === "text") return s;
+  const t = s.trim().replace(/ /g," ");
+  let m, n;
+  if(mode === "dot"){
+    m = t.match(/^([-+]?)(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?(\s?%)?$/);
+    if(!m) return s;
+    n = parseFloat(m[1] + m[2].replace(/,/g,"") + (m[3]||""));
+  } else {
+    m = t.match(/^([-+]?)(\d{1,3}(?:\.\d{3})+|\d+)(,\d+)?(\s?%)?$/);
+    if(!m) return s;
+    n = parseFloat(m[1] + m[2].replace(/\./g,"") + (m[3] ? "." + m[3].slice(1) : ""));
+  }
+  if(!isFinite(n)) return s;
+  // keep leading zeros (IDs, phone numbers, postcodes) as text
+  if(/^[-+]?0\d/.test(m[1]+m[2])) return s;
+  return m[4] ? n/100 : n;
+}
+
+function prepared(t){
+  // returns {aoa, merges} after empty-row removal
+  let rows = t.values.map((r,i) => ({r, i}));
+  if($("skipEmpty").checked){
+    rows = rows.filter(({r,i}) => r.some(v => String(v ?? "").trim() !== "") || t.merges.some(m => i>m.r && i<m.r+m.rs));
+  }
+  const map = new Map(rows.map(({i}, k) => [i, k]));
+  const aoa = rows.map(({r}) => r.map(toValue));
+  let merges = [];
+  if($("merge").checked){
+    merges = t.merges.map(m => {
+      const s = map.get(m.r); if(s===undefined) return null;
+      let e = s; for(let i=m.r; i<m.r+m.rs; i++) if(map.has(i)) e = map.get(i);
+      return {r:s, c:m.c, rs:e-s+1, cs:m.cs};
+    }).filter(m => m && (m.rs>1 || m.cs>1));
+  }
+  return {aoa, merges};
+}
+
+/* ---------- workbook ---------- */
+function colWidths(aoa){
+  const w = [];
+  aoa.forEach(r => r.forEach((v,c) => {
+    const len = v instanceof Date ? 10 : Math.max(...String(v ?? "").split("\n").map(x => x.length));
+    w[c] = Math.min(60, Math.max(w[c]||6, len + 2));
+  }));
+  return w.map(wch => ({wch}));
+}
+function sheetName(base, used){
+  let n = base.replace(/[\\\/\?\*\[\]:]/g," ").slice(0,31).trim() || "Sheet";
+  let k = 2, out = n;
+  while(used.has(out.toLowerCase())){ const suf = " (" + k++ + ")"; out = n.slice(0, 31 - suf.length) + suf; }
+  used.add(out.toLowerCase()); return out;
+}
+function tableLabel(t){
+  const base = t.file.replace(/\.(docx|pdf|xlsx|xlsm|xls|csv|ods)$/i,"");
+  if(t.sheet !== undefined){   // spreadsheet input: file + sheet name
+    return t.sheet === null ? base : (fileNames.length > 1 ? base + " " + t.sheet : t.sheet);
+  }
+  return (fileNames.length > 1 ? base + " " : "") + "Table " + t.index;
+}
+function buildWorkbook(){
+  const wb = XLSX.utils.book_new();
+  const chosen = tables.filter(t => t.on);
+  const multi = fileNames.length > 1;
+  const used = new Set();
+  const label = tableLabel;
+  const finish = (all, allM) => {
+    const ws = XLSX.utils.aoa_to_sheet(all, {cellDates:true});
+    if(allM.length) ws["!merges"] = allM;
+    ws["!cols"] = colWidths(all.filter(r => r.length > 1));
+    XLSX.utils.book_append_sheet(wb, ws, "Combined");
+  };
+  if($("layout").value === "stack" && $("stackmode").value === "join"){
+    // one table: header from the first source, later sources drop a matching header row
+    const src = $("srcCol").checked;
+    const all = [], allM = [];
+    let header = null;
+    chosen.forEach((t, k) => {
+      const {aoa, merges} = prepared(t);
+      if(!aoa.length) return;
+      let start = 0;
+      if(k === 0){ header = aoa[0]; }
+      else if(header && sameRow(aoa[0], header)) start = 1;
+      const off = all.length - start, sc = src ? 1 : 0;
+      aoa.slice(start).forEach((r, i) => all.push(src ? [k === 0 && i === 0 && start === 0 ? "Source" : label(t)].concat(r) : r));
+      merges.filter(m => m.r >= start).forEach(m => allM.push({s:{r:m.r+off, c:m.c+sc}, e:{r:m.r+off+m.rs-1, c:m.c+sc+m.cs-1}}));
+    });
+    finish(all, allM);
+  } else if($("layout").value === "sheets"){
+    chosen.forEach(t => {
+      const {aoa, merges} = prepared(t);
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      if(merges.length) ws["!merges"] = merges.map(m => ({s:{r:m.r,c:m.c}, e:{r:m.r+m.rs-1, c:m.c+m.cs-1}}));
+      ws["!cols"] = colWidths(aoa);
+      XLSX.utils.book_append_sheet(wb, ws, sheetName(label(t), used));
+    });
+  } else {
+    const all = [], allM = [];
+    const src = $("srcCol").checked, sc = src ? 1 : 0;
+    chosen.forEach((t, k) => {
+      if(k) all.push([]);
+      all.push([label(t)]);
+      const off = all.length;
+      const {aoa, merges} = prepared(t);
+      aoa.forEach(r => all.push(src ? [label(t)].concat(r) : r));
+      merges.forEach(m => allM.push({s:{r:m.r+off,c:m.c+sc}, e:{r:m.r+off+m.rs-1, c:m.c+sc+m.cs-1}}));
+    });
+    finish(all, allM);
+  }
+  return XLSX.write(wb, {bookType:"xlsx", type:"array", compression:true});
+}
+
+/* ---------- rendering ---------- */
+const PREVIEW_ROWS = 40;
+function colLetter(n){ let s=""; n++; while(n){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26); } return s; }
+function renderTable(t, i){
+  const {aoa, merges} = prepared(t);
+  const covered = new Set(), spans = new Map();
+  merges.forEach(m => { spans.set(m.r+","+m.c, m); for(let r=m.r;r<m.r+m.rs;r++) for(let c=m.c;c<m.c+m.cs;c++) if(r!==m.r||c!==m.c) covered.add(r+","+c); });
+  const box = document.createElement("section");
+  box.className = "tbl" + (t.on ? "" : " off");
+  const head = document.createElement("div"); head.className = "tbl-head";
+  const cb = document.createElement("input"); cb.type="checkbox"; cb.checked=t.on; cb.id="t"+i; cb.disabled = t.example;
+  cb.setAttribute("aria-label","Include table " + t.index);
+  cb.addEventListener("change", () => { t.on = cb.checked; box.classList.toggle("off", !t.on); updateBar(); });
+  const name = document.createElement("label"); name.className="name"; name.htmlFor=cb.id;
+  name.textContent = t.sheet !== undefined ? (t.sheet || "Sheet") : "Table " + t.index;
+  const meta = document.createElement("span"); meta.className="meta"; meta.textContent = aoa.length + " rows × " + t.nCols + " cols" + (merges.length ? " · " + merges.length + " merged" : "");
+  head.append(cb, name, meta);
+  if(t.example){ const tag=document.createElement("span"); tag.className="tag"; tag.textContent="Example"; head.append(tag); }
+  const src = document.createElement("span"); src.className="src";
+  src.textContent = t.file + (t.page ? (t.lastPage && t.lastPage !== t.page ? " · pages " + t.page + "–" + t.lastPage : " · page " + t.page) : "");
+  head.append(src);
+  const sc = document.createElement("div"); sc.className = "scroll";
+  const table = document.createElement("table");
+  const hr = document.createElement("tr"); hr.className="colh"; hr.append(document.createElement("th"));
+  for(let c=0;c<t.nCols;c++){ const th=document.createElement("th"); th.textContent=colLetter(c); hr.append(th); }
+  table.append(hr);
+  aoa.slice(0, PREVIEW_ROWS).forEach((row, r) => {
+    const tr = document.createElement("tr");
+    const rn = document.createElement("th"); rn.className="rn"; rn.textContent = r+1; tr.append(rn);
+    for(let c=0;c<t.nCols;c++){
+      if(covered.has(r+","+c)) continue;
+      const td = document.createElement("td"); const v = row[c];
+      td.textContent = typeof v === "number" ? v.toLocaleString(undefined,{maximumFractionDigits:10})
+        : v instanceof Date ? v.toLocaleDateString() : String(v ?? "");
+      if(typeof v === "number" || v instanceof Date) td.className = "num";
+      const m = spans.get(r+","+c);
+      if(m){ if(m.rs>1) td.rowSpan = Math.min(m.rs, PREVIEW_ROWS - r); if(m.cs>1) td.colSpan = m.cs; }
+      tr.append(td);
+    }
+    table.append(tr);
+  });
+  sc.append(table); box.append(head, sc);
+  if(aoa.length > PREVIEW_ROWS){ const more=document.createElement("div"); more.className="more"; more.textContent = "+ " + (aoa.length-PREVIEW_ROWS) + " more rows in the download"; box.append(more); }
+  return box;
+}
+function render(){
+  const list = $("list"); list.replaceChildren(...tables.map(renderTable));
+  updateBar();
+}
+function updateBar(){
+  const on = tables.filter(t => t.on && !t.example);
+  $("save").disabled = isExample || !on.length;
+  $("clear").hidden = isExample;
+  if(isExample){ $("sum").textContent = "Showing an example. Add Word, PDF or Excel files to use your own."; return; }
+  const rows = on.reduce((a,t) => a + prepared(t).aoa.length, 0);
+  $("sum").innerHTML = "";
+  const b1 = document.createElement("b"); b1.textContent = on.length;
+  const b2 = document.createElement("b"); b2.textContent = rows.toLocaleString();
+  $("sum").append(b1, " of " + tables.length + " tables selected · ", b2, " rows");
+}
+function setStatus(msg, err){ const s=$("status"); s.textContent = msg || ""; s.classList.toggle("err", !!err); }
+
+/* ---------- example ---------- */
+function loadExample(){
+  isExample = true; fileNames = ["quarterly-report.docx"];
+  const ex = (values, merges) => ({file:"quarterly-report.docx", values, merges, nRows:values.length, nCols:values[0].length, on:true, example:true});
+  tables = [
+    ex([["Region","Q1","Q2","Q3"],["North","12,400","13,050","14,210"],["South","9,870","10,120","9,640"],["East","15,300","15,980","16,775"],["Total","37,570","39,150","40,625"]], []),
+    ex([["Supplier","Contact",""],["","Name","Phone"],["Delta Paper","M. Ioannou","0210 555 0142"],["Kappa Logistics","S. Pappas","0231 555 0198"]], [{r:0,c:0,rs:2,cs:1},{r:0,c:1,rs:1,cs:2}])
+  ].map((t,k) => ({...t, index:k+1}));
+  setStatus("");
+  render();
+}
+
+/* ---------- input ---------- */
+async function handleFiles(list){
+  const files = [...list].filter(f => f.size);
+  if(!files.length) return;
+  sourceFiles = files;
+  setStatus("Reading " + files.length + " file" + (files.length>1?"s":"") + "…");
+  const out = [], names = [], problems = [];
+  let hasPdf = false;
+  for(const f of files){
+    const isPdf = /\.pdf$/i.test(f.name), isDocx = /\.docx$/i.test(f.name), isSheet = /\.(xlsx|xlsm|xls|csv|ods)$/i.test(f.name);
+    if(!isPdf && !isDocx && !isSheet){ problems.push(f.name + " is not a supported file" + (/\.doc$/i.test(f.name) ? " (open it in Word and save as .docx)" : "")); continue; }
+    try{
+      if(isPdf) hasPdf = true;
+      const found = isPdf ? await readPdf(f) : isSheet ? await readSheets(f) : await readDocx(f);
+      names.push(f.name);
+      if(!found.length) problems.push(f.name + (isSheet ? " has only empty sheets" : " has no tables"));
+      found.forEach((t,k) => out.push({...t, file:f.name, index:k+1, on:true, example:false}));
+    }catch(e){ problems.push(f.name + " could not be opened: " + e.message); }
+  }
+  $("pdfnote").hidden = !hasPdf;
+  if(!out.length){ setStatus(problems.join(". ") + ".", true); return; }
+  isExample = false; tables = out; fileNames = names;
+  setStatus("Found " + out.length + " table" + (out.length>1?"s":"") + " in " + names.length + " file" + (names.length>1?"s":"") + "." + (problems.length ? " " + problems.join(". ") + "." : ""), problems.length>0);
+  render();
+}
+$("file").addEventListener("change", e => { handleFiles(e.target.files); e.target.value = ""; });
+const drop = $("drop");
+["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => handleFiles(e.dataTransfer.files));
+function syncLayout(){
+  const stack = $("layout").value === "stack";
+  $("stackOpt").hidden = !stack; $("srcOpt").hidden = !stack;
+  updateBar();
+}
+["layout","stackmode","srcCol"].forEach(id => $(id).addEventListener("change", syncLayout));
+["numfmt","merge","skipEmpty"].forEach(id => $(id).addEventListener("change", render));
+["pdfmode","joinPages"].forEach(id => $(id).addEventListener("change", () => {
+  if(!isExample && sourceFiles.some(f => /\.pdf$/i.test(f.name))) handleFiles(sourceFiles);
+}));
+$("clear").addEventListener("click", () => { sourceFiles = []; $("pdfnote").hidden = true; loadExample(); });
+
+/* ---------- save ---------- */
+let downloads = null;
+if(window.claude && claude.use) claude.use("downloads").then(d => { downloads = d; }).catch(() => {});
+$("save").addEventListener("click", async () => {
+  if(typeof XLSX === "undefined"){ setStatus("The spreadsheet library did not load. Check your connection and reload the page.", true); return; }
+  const buf = buildWorkbook();
+  const base = fileNames.length === 1 ? fileNames[0].replace(/\.(docx|pdf)$/i,"") + " tables" : "Document tables";
+  const filename = base + ".xlsx";
+  const blob = new Blob([buf], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+  if(downloads){
+    try{ await downloads.save({filename, data: blob}); setStatus("Saved " + filename + "."); }
+    catch(e){
+      if(e && e.code === "declined") setStatus("Download cancelled.");
+      else if(e && e.code === "rate_limited") setStatus("A save prompt is already open. Finish it, then try again.", true);
+      else setStatus("Downloads aren't available in this view. Open the page in claude.ai to save the file.", true);
+    }
+  } else {
+    // outside the Claude viewer (e.g. a saved copy of this page): plain browser download
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename;
+    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+});
+
+loadExample();
+</script>
+
+</body></html>
